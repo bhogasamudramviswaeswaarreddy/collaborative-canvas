@@ -8,7 +8,14 @@ const RoomManager = require('./rooms');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+
+// Setup Socket.io with CORS enabled for development
+const io = socketIo(server, {
+  cors: {
+    origin: ['http://localhost:5173', 'http://localhost:3000'],
+    methods: ['GET', 'POST']
+  }
+});
 
 // Initialize managers
 const stateManager = new StateManager();

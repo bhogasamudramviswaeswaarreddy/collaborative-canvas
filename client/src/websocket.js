@@ -18,7 +18,13 @@ class WebSocketHandler {
   // Connect to WebSocket server
   connect() {
     try {
-      this.socket = io();
+      // Connect directly to backend on port 3002
+      this.socket = io('http://localhost:3002', {
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        reconnectionAttempts: 5
+      });
     } catch (e) {
       console.error('Failed to connect:', e);
       return;

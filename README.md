@@ -1,68 +1,67 @@
 # Collaborative Drawing Canvas
 
-A real-time drawing app where multiple people can draw on the same canvas at the same time. Built as a learning project to understand WebSockets and multi-user state synchronization.
+A real-time drawing app where multiple people can draw on the same canvas at the same time. I built this to learn WebSockets and figure out how to keep everyone's drawings in sync.
 
-## Features
+## What it can do
 
-- Real-time drawing with other users
-- Brush and eraser tools
-- Color picker with presets
-- See other users' cursors while they draw
-- Undo button (affects all users)
-- Clear canvas (global)
-- Works on desktop and touch devices
+- Draw in real-time with other people
+- Pick your brush or eraser
+- Choose colors (or just use the presets)
+- See where other people's cursors are
+- Undo (removes the last stroke for everyone)
+- Clear the whole canvas at once
+- Works on phones and computers
 
-## How to Run
+## Getting it running
 
-Prerequisites: Node.js and npm
-
-Install dependencies:
+You need Node.js and npm first.
 
 ```bash
 npm install
 npm run client:install
 ```
 
-### Dev mode (React + server)
+### During development (hot reload mode)
 
 ```bash
 npm run dev
 npm run client:dev
 ```
 
-Open http://localhost:5173 in your browser. The React dev server proxies Socket.io to the backend.
+Go to http://localhost:5173 in your browser. React dev server automatically talks to the backend.
 
-### Production mode
+### For actual use
 
 ```bash
 npm run client:build
 npm start
 ```
 
-Then open http://localhost:3000 in your browser.
+Then go to http://localhost:3000.
 
-## Testing Collaborative Features
+## Try it out with multiple people
 
-Open the app in 2+ browser windows/tabs and start drawing. You should see:
-- Your own drawing appears instantly
-- Other users' drawings appear in real-time in their own colors
-- When you click Undo, it removes the last stroke for everyone
-- You can see cursors of other users moving around
+Open the app in 2+ different browser tabs or windows and draw. Here's what you'll see:
 
-## Known Limitations
+- Your drawings show up instantly (no lag)
+- Other people's drawings appear right away too (in their own colors)
+- Click Undo and it removes the last stroke for everyone
+- You can see where other people's cursors are moving around
 
-- State is in memory only; a server restart wipes drawings.
-- Undo is global and redraws from history, so large canvases can feel slower.
-- No conflict resolution if two users undo at the same time.
-- High latency can make cursors jump around.
+## Stuff that doesn't work perfectly
 
-## Time Spent
+- Restart the server = all drawings are gone (not saved anywhere)
+- Undo regenerates everything from scratch, so it can lag with huge drawings
+- If two people undo at the exact same time, weird stuff might happen
+- If your internet is really slow, cursors jump around instead of moving smoothly
 
-Roughly 8–12 hours over 2–3 days.
+## How long this took
 
-## Tech Stack
+I spent like 8-12 hours on it over a couple days.
 
-- Frontend: React + Vite + HTML5 Canvas
+## What I used to build it
+
+- Frontend: React + Vite + Canvas API
 - Backend: Node.js + Express
-- Real-time: Socket.io WebSockets
-- No database (stores in memory)
+- Real-time stuff: Socket.io
+- Database: None (everything in memory)

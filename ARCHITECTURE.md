@@ -2,76 +2,76 @@
 
 ## Overview
 
-When multiple clients connect, they need to see each other's drawings in real-time. The server acts as a relay - it receives drawing events from one client and broadcasts them to everyone else.
+So basically, when people connect they need to see each other drawing in real-time. The server acts like a messenger - it gets drawing events from one person and tells everyone else about it. Pretty straightforward stuff.
 
 ### Basic Flow
 
-1. User connects → Server assigns them a unique ID and color
-2. Server sends all existing strokes to the new user
-3. When User A draws → Server tells all other users about it
-4. Users B, C, D see User A's strokes appearing on their canvas
+1. Someone connects → Server gives them a unique ID and a color
+2. Server sends them all the drawings that are already there
+3. When Person A draws → Server broadcasts it to everyone else
+4. Everyone else sees Person A's strokes showing up on their canvas
 
-This is called "client-server architecture".
+This is the "client-server" model I guess? I didn't even think about alternatives honestly, just seemed like the obvious way.
 
-### 2. Drawing Flow (Real-time Synchronization)
+### 2. Drawing Flow (How it actually happens)
 
 ```
-User A (Drawing)                Server                    User B (Viewing)
+Person Drawing                    Server                    Other Person
      │                             │                             │
      ├─ mousedown                  │                             │
      ├──► draw-start ─────────────►│                             │
      │                             │                             │
      ├─ mousemove                  │                             │
-     ├──► draw-move ──────────────►├──► remote-draw ───────────►├─ Draw on canvas
-     │   (x, y, color, width)      │    (broadcast to others)    │
+     ├──► draw-move ──────────────►├──► remote-draw ───────────►├─ Draws it
+     │   (x, y, color, width)      │    (tells everyone)         │
      │                             │                             │
      ├─ mousemove                  │                             │
-     ├──► draw-move ──────────────►├──► remote-draw ───────────►├─ Draw on canvas
+     ├──► draw-move ──────────────►├──► remote-draw ───────────►├─ More drawing
      │                             │                             │
      │                             │                             │
      ├─ mouseup                    │                             │
      ├──► draw-end ────────────────►│                             │
-     │                             ├─ Save complete stroke       │
-     │                             │   to history                │
-     └─ Drawing complete           └─ Stroke saved              │
+     │                             ├─ OK saves this stroke       │
+     │                             │   to the history            │
+     └─ Done drawing               └─ Stroke saved              │
 ```
 
-**Key Design Decisions:**
+**Why I made these choices:**
 
-1. **Segment-based transmission** - Instead of sending entire paths, we send individual movement points
-   - Pros: Lower latency, users see strokes as they happen
-   - Cons: More network messages (mitigated by throttling)
+1. **Send individual points, not the whole path** - Every mousemove I send the current position
+   - Good: Less delay, drawing shows up immediately
+   - Bad: Sends a LOT of messages (but throttling helped)
 
-2. **Stroke completion** - Only complete strokes are saved to history
-   - This makes undo work cleanly (one stroke = one action)
+2. **Only save complete strokes** - I don't save anything until you let go of the mouse
+   - Makes undo way easier (each stroke = one undo)
 
-3. **Broadcast pattern** - Server broadcasts to all OTHER clients (not back to sender)
-   - Sender draws locally for immediate feedback
-   - No round-trip delay for the drawing user
+3. **Don't send back to yourself** - Server tells EVERYONE EXCEPT YOU
+   - You see your drawing instantly locally
+   - Server doesn't send it back to you (that would be slow)
 
-### 3. Cursor Indicator Flow
+### 3. Cursors (the other user's mouse)
 
 ```
-Client A                          Server                    Client B
+My Client                          Server                    Their Client
    │                               │                             │
-   ├─ mousemove (throttled)        │                             │
-   ├──► cursor-move ───────────────►├──► remote-cursor ─────────►├─ Update cursor
-   │    (x, y)                      │    (userId, x, y, color)   │   overlay
+   ├─ mouse moves                  │                             │
+   ├──► cursor-move ──────────────►├──► remote-cursor ────────►├─ Show cursor
+   │    (x, y)                      │    (userId, x, y, color)   │   on screen
    │                               │                             │
 ```
 
-**Throttling Strategy:**
-- Cursor updates limited to max 1 per 50ms (20 updates/sec)
-- Prevents server overload while maintaining smooth visuals
-- Could be increased/decreased based on network conditions
+**How I throttle this:**
+- Only send cursor position once every 50ms (like 20 times a second)
+- Stops the server from drowning in cursor updates
+- Still looks smooth on screen
+- Could change this if it feels laggy
+ (where stuff lives)
 
-## 🗄️ State Management
+### On the Server Side
 
-### Server-Side State
-
-The server maintains two main data structures:
-
-#### 1. Stroke History (StateManager)
+The server just stores two thing
+The server keeps two main data structures in memory:
+All the Strokes (StateManager)
 
 ```javascript
 {
@@ -84,7 +84,7 @@ The server maintains two main data structures:
       segments: [
         {x: 100, y: 200, timestamp: 1234567890},
         {x: 101, y: 201, timestamp: 1234567891},
-        // ... more segments
+        // ... more points
       ]
     },
     // ... more strokes
@@ -92,12 +92,12 @@ The server maintains two main data structures:
 }
 ```
 
-**Why store segments?**
-- Allows redrawing exact strokes during undo
-- Enables potential features like stroke replay or animation
-- Could compress segments later for optimization
+**Why segments?**
+- So I can redraw them when undo happens
+- Maybe later I'll do cool stuff like replaying the drawing
+- Haven't had to optimize this yet
 
-#### 2. Room Data (RoomManager)
+#### 2. Who's Online (RoomManager)
 
 ```javascript
 {
@@ -111,25 +111,25 @@ The server maintains two main data structures:
           name: "User 123",
           joinedAt: 1234567890
         },
-        // ... more users
+        // ... other people
       }
     }
   }
 }
 ```
 
-**Room system benefits:**
-- Ready for multiple isolated canvases
-- Easy to add private/public rooms later
-- Clean user management per room
+**Why I set it up this way:**
+- Can add multiple rooms later (like private canvas or something)
+- Each room is isolated (one room's drawing doesn't affect another)
+- Users tied to rooms makes cleanup easier
 
-### Client-Side State
+### On the Client Side
 
-Each client maintains:
+Each browser keeps track of:
 
 ```javascript
 {
-  // Drawing state
+  // My drawing state
   isDrawing: boolean,
   lastX: number,
   lastY: number,
@@ -137,103 +137,84 @@ Each client maintains:
   currentColor: string,
   brushSize: number,
   
-  // Remote tracking
+  // Other people's stuff
   remoteCursors: Map<userId, {x, y, color}>,
-  remotePositions: Map<userId, {x, y}>  // For smooth line drawing
+  remotePositions: Map<userId, {x, y}>  // For drawing their lines
 }
 ```
 
-## 🔧 WebSocket Message Protocol
+## 🔧 Socket.io Messages
 
-### Client → Server Events
+### Client sends these:
 
-| Event | Data | Purpose |
+| Event | Data | What it does |
 |-------|------|---------|
-| `draw-start` | `{color, width, tool}` | Notify drawing started |
-| `draw-move` | `{x, y, color, width, tool}` | Send stroke segment |
-| `draw-end` | (empty) | Notify drawing finished |
-| `cursor-move` | `{x, y}` | Update cursor position |
-| `undo` | (empty) | Request global undo |
-| `clear-canvas` | (empty) | Clear entire canvas |
+| `draw-start` | `{x, y, color, width, tool}` | "I started drawing" |
+| `draw-move` | `{x, y, color, width, tool}` | "Here's the next point" |
+| `draw-end` | (nothing) | "OK I'm done" |
+| `cursor-move` | `{x, y}` | "My cursor is here" |
+| `undo` | (nothing) | "Delete last stroke" |
+| `clear-canvas` | (nothing) | "Wipe everything" |
+| `set-name` | `{name}` | "Call me this" |
 
-### Server → Client Events
+### Server sends these back:
 
-| Event | Data | Purpose |
+| Event | Data | What it means |
 |-------|------|---------|
-| `init` | `{userId, userColor, strokes, users}` | Initial setup data |
-| `remote-draw` | `{userId, x, y, color, width, tool}` | Drawing from another user |
-| `remote-cursor` | `{userId, x, y, color}` | Cursor position update |
-| `canvas-update` | `{action, strokes}` | Full canvas sync (undo/clear) |
-| `user-joined` | `{id, color}` | New user connected |
-| `user-left` | `{userId}` | User disconnected |
+| `init` | `{userId, userColor, strokes, users}` | "Here's your info + everything drawn so far" |
+| `remote-draw-start` | `{userId, x, y, color, width, tool}` | "Someone started drawing" |
+| `remote-draw` | `{userId, x, y, color, width, tool}` | "They drew here" |
+| `remote-draw-end` | `{userId}` | "They finished" |
+| `remote-cursor` | `{userId, x, y, color}` | "Their cursor moved" |
+| `canvas-update` | `{action, strokes}` | "Redraw everything (undo/clear happened)" |
+| `user-joined` | `{id, color, name}` | "New person connected" |
+| `user-left` | `{userId}` | "Someone disconnected" |
+| `users-list-update` | `{users}` | "Here's the updated list of who's here" |
 
-### Message Size Optimization
+## ↩️ Undo (the hardest part)
 
-**Current approach:**
-- Each `draw-move` event is ~50-100 bytes
-- At 60 FPS, that's ~6KB/sec per user drawing
-- With 10 simultaneous users drawing: ~60KB/sec server bandwidth
-
-**Possible optimizations** (not implemented):
-- Batch multiple segments into one message
-- Use binary protocol instead of JSON
-- Delta encoding (only send position changes)
-- Compress long-running strokes
-
-## ↩️ Undo/Redo Logic
-
-### Global Undo Implementation
-
-This was the trickiest part. Here's how it works:
+### How it works
 
 ```
-1. User clicks Undo
-2. Client sends 'undo' event to server
+1. Someone clicks Undo
+2. Their browser sends 'undo' to server
 3. Server:
-   - Removes last stroke from history array
-   - Broadcasts full stroke history to ALL clients
-4. All clients:
-   - Clear their canvas
-   - Redraw every stroke from history in order
+   - Removes the last stroke from the list
+   - Tells EVERYONE "here's the new list of strokes"
+4. Everyone's browser:
+   - Clears the canvas
+   - Redraws every stroke in order
 ```
 
 **Why redraw everything?**
 
-Alternative approaches considered:
+I thought about other ways but they all sucked:
 
-❌ **Option 1: Store canvas snapshots**
-- Pros: Fast undo (just load snapshot)
-- Cons: High memory usage, complex to manage
+❌ **Snapshots** - Save a picture before each stroke
+- Fast to restore but uses SO much memory
+- Messy to manage
 
-❌ **Option 2: Reverse individual operations**
-- Pros: Efficient
-- Cons: Very complex (how do you "un-draw" a partially overlapping stroke?)
+❌ **Undo each action** - Somehow reverse the drawing
+- Super complicated (how do you "undraw" something that overlaps?)
+- Math would be a nightmare
 
-✅ **Option 3: Redraw from history (chosen)**
-- Pros: Simple logic, reliable, easy to implement
-- Cons: Slower for large histories (but acceptable for <1000 strokes)
+✅ **Redraw from scratch (what I did)** - Keep a list, rebuild on undo
+- Super simple code
+- Works perfectly
+- Little slower with huge histories but fine for <1000 strokes
 
-### Redo (Not Implemented)
+### Redo - didn't do it
 
-To add redo, I would:
-1. Add a `redoStack` array to StateManager
-2. When undoing, push removed stroke to redoStack
-3. Clear redoStack when new drawing happens
-4. On redo, pop from redoStack and push back to strokes
+Ran out of time. Undo is enough honestly.
 
-Didn't implement because:
-- Time constraint
-- Undo covers 80% of use cases
-- Redo adds complexity for conflict resolution
+## ⚡ The Performance Stuff I Had to Deal With
 
-## ⚡ Performance Considerations
+### 1. Canvas Coordinate Hell
 
-### 1. Canvas Coordinate Mapping
-
-**Problem:** CSS canvas size ≠ internal canvas resolution
+**The problem:** The actual canvas resolution (like 1920x1080) doesn't match what the browser displays due to CSS
 
 ```javascript
-// Must scale mouse coordinates
+// Gotta scale everything
 const scaleX = canvas.width / rect.width;
 const scaleY = canvas.height / rect.height;
 
@@ -242,189 +223,140 @@ const y = (event.clientY - rect.top) * scaleY;
 ```
 
 **Why this matters:**
-- If canvas is 1920x1080 but CSS displays at 960x540
-- Without scaling, all clicks would be off by 2x
+- Mess this up = all clicks are off by 2x
+- Wasted SO much time on this before I figured it out
 
-### 2. Drawing Smoothness
+2. **Making Lines Look Good**
 
-**Techniques used:**
+How I made drawing not suck:
 
-1. **lineCap and lineJoin**
+1. **Rounded corners**
    ```javascript
    ctx.lineCap = 'round';
    ctx.lineJoin = 'round';
    ```
-   - Prevents jagged corners
-   - Makes strokes look natural
+   - Not sharp and weird looking
 
-2. **Continuous paths**
-   - Drawing from lastX/lastY to currentX/currentY
-   - Creates connected lines instead of dots
+2. **Connect the dots**
+   - Draw a line from the last point to the current point
+   - Not just random dots scattered
 
-3. **Event frequency**
-   - Mouse moves fire at ~60 FPS
-   - Each event is immediately sent (no batching yet)
-   - Could be optimized with requestAnimationFrame
+3. **Send it NOW**
+   - Mouse moves ~60 times per second
+   - Send each one right away (no grouping)
+   - Could optimize with requestAnimationFrame but doesn't need it yet
 
-### 3. Network Optimization
+### 3. Network Stuff
 
-**Current throttling:**
-- Cursor updates: 50ms (20/sec)
-- Drawing updates: No throttling (immediate)
+**What gets throttled:**
+- Cursor: Only send once every 50ms (like 20 times/sec)
+- Drawing: Send immediately every time
 
-**Why no throttling on drawing?**
-- Drawing accuracy is priority
-- Throttling would cause gaps in lines
-- Network can handle 60 messages/sec per user
+**Why not throttle drawing?**
+- If I slow it down you get gaps in your line
+- Would feel like lag
+- Network can handle it (60 msgs/sec is chill)
 
-### 4. Memory Management
+### 4. Memory
 
-**Current limitations:**
-- Max 1000 strokes in history
-- Older strokes removed when limit reached
-- No stroke compression
+**Limits:**
+- Keep max 1000 strokes
+- Oldest ones get deleted if we hit the limit
+- Haven't needed to optimize yet
 
-**Production improvements needed:**
-- Compress stroke segments (remove redundant points)
-- Store in database instead of RAM
-- Implement canvas chunking for large drawings
+## 🤔 What Happens With Weird Timing
 
-## 🤔 Conflict Handling
-
-### What happens when two users draw at the same time?
-
-**Current approach: Eventual consistency**
+**Two people drawing at exactly the same time:**
 
 ```
 Time: 0ms
-User A draws line at (10,10) → (20,20)
-User B draws line at (10,10) → (20,20)
+Person A draws at (10,10) → (20,20)
+Person B draws at (10,10) → (20,20)
 
-Time: 50ms (network delay)
-Server receives A's stroke → broadcasts to B
-Server receives B's stroke → broadcasts to A
+Time: 50ms (lag)
+Server gets A's stroke → tells B
+Server gets B's stroke → tells A
 
 Time: 100ms
-Both users see both strokes
-Order determined by server receive time
+Both see both strokes
+Whoever sent first wins (but doesn't really matter)
 ```
 
-**No locking mechanism because:**
-- Locking would add latency
-- Drawing is additive (no deletions)
-- Last-write-wins is acceptable for art
+**Why no locks?**
+- Locks = slow
+- Drawing just adds stuff, doesn't edit
+- Drawing app doesn't care about order
 
-**Edge cases:**
+**Edge cases that could happen:**
 
-1. **Overlapping strokes**
-   - Both strokes are drawn
-   - Order doesn't really matter visually
-   - Both saved to history
+1. **Strokes on top of each other**
+   - Both show up
+   - Order based on who the server heard from first
+   - No big deal
 
-2. **Simultaneous undo**
-   - Server processes one first
-   - Second undo removes the next stroke
-   - Could result in unexpected behavior
-   - Fix: Add undo cooldown or queue
+2. **Connection drops mid-stroke**
+   - Stroke gets saved anyway (disconnect code handles it)
+   - Reconnect shows everything
 
-3. **Network partition**
-   - User loses connection while drawing
-   - Their active stroke is lost (not saved)
-   - Reconnect shows current state
-   - Fix: Send periodic "checkpoint" events
+## 🏗️ What I Decided To Do
 
-## 🏗️ Architecture Trade-offs
+### My priorities:
 
-### What I prioritized:
+1. **Simple > Fancy**
+   - Code I can understand later
+   - Simple data flow
+   - No over-engineering
 
-1. **Simplicity over optimization**
-   - Clear, readable code
-   - Easy to understand data flow
-   - Avoided premature optimization
+2. **Fast UI > Perfect accuracy**
+   - You see your stroke instantly
+   - Other people see it in a moment
+   - Feels good > technically perfect
 
-2. **Real-time over accuracy**
-   - Immediate feedback
-   - Accept eventual consistency
-   - Smooth UX more important than perfect sync
+3. **Think about scale**
+   - Room system could handle multiple canvases
+   - Could swap in a database later
+   - Could go peer-to-peer with WebRTC if needed
 
-3. **Scalability considerations**
-   - Room system ready for expansion
-   - State manager can be swapped with database
-   - WebSocket can be replaced with WebRTC for peer-to-peer
+### What I'd fix for a real app:
 
-### What I'd change for production:
+1. **Save to a database** - drawings disappear on server restart
+2. **Add login** - accounts and private canvases
+3. **Handle more users** - right now it's just one room
 
-1. **Database integration**
-   - PostgreSQL for metadata (users, rooms)
-   - Redis for active stroke buffer
-   - S3 for completed drawings
+## 🐛 Known Issues
 
-2. **Authentication**
-   - User accounts and sessions
-   - Private vs public canvases
-   - Permissions system
+1. **Fast mouse = gaps**
+   - If you draw really fast, points get far apart
+   - Could fix by adding more points between them
 
-3. **Better state sync**
-   - Operational transformation for conflicts
-   - CRDT-based stroke management
-   - Vector clocks for causality
+2. **Nothing saves**
+   - Restart the server = everything's gone
+   - On purpose (learning project, not production)
 
-4. **Performance monitoring**
-   - Track websocket message rates
-   - Canvas redraw performance
-   - Server memory usage
-   - Network bandwidth per user
+## 📚 How I Built This
 
-## 🐛 Known Issues & Edge Cases
+**Hardest parts:**
 
-1. **Fast drawing creates gaps**
-   - When mouse moves very fast, segments might be far apart
-   - Fix: Interpolate points between segments
+1. Canvas coordinate scaling - invisible bug that broke everything
+2. Deciding what to save and how
+3. Making undo not flicker
+4. Network efficiency while keeping it responsive
 
-2. **Memory leak with many users**
-   - remoteCursors Map grows indefinitely
-   - Fix: Clean up on user disconnect (partially done)
+**Bugs I actually had to fix:**
 
-3. **Canvas doesn't persist**
-   - Server restart = lost drawings
-   - Fix: Save to database periodically
+1. **Other people's strokes were connecting** - When User B started drawing, it continued from where User A left off. Spent forever on this. Fixed by tracking separate coords per user.
 
-4. **No conflict resolution for undo**
-   - Race condition if two users undo simultaneously
-   - Fix: Add undo queue with debouncing
+2. **Canvas wasn't actually clearing** - `canvas.width = canvas.width` doesn't work. Turned out to be the devicePixelRatio. Used getBoundingClientRect() instead.
 
-## 📚 Learning Outcomes
+3. **Undo was deleting random strokes** - Stored strokes in an object so I lost the order. Switched to an array.
 
-**Hardest challenges:**
+4. **Ghost cursors** - Removed users' cursors stayed on screen forever. Added cleanup functions.
 
-1. Getting coordinate mapping right with CSS scaling
-2. Deciding on stroke vs segment storage
-3. Making undo work globally without flickering
-4. Balancing network efficiency with drawing smoothness
+5. **New people didn't see the user list** - Disconnect wasn't broadcasting the updated list. Added io.emit.
 
-**Specific bugs I had to fix:**
+**What I learned:**
 
-1. **Remote strokes connecting** - When User B started drawing, strokes connected to where User A left off instead of starting fresh. Took 2+ hours to debug. Fixed by tracking separate lastX/lastY per user.
-
-2. **Clear canvas wasn't working** - Using `canvas.width = canvas.width` didn't clear. The real issue was CSS scaling and devicePixelRatio. Switched to using getBoundingClientRect().
-
-3. **Undo removing wrong stroke** - Strokes stored in object, lost order. Switched to array.
-
-4. **Cursor leak** - Removed users' cursors stayed on canvas. Added cleanup functions.
-
-5. **New users didn't see online list** - Disconnect handler wasn't broadcasting updates. Added io.emit('users-list-update').
-
-**What I'd change:**
-
-- Database integration from day 1 (having to redo state management later was painful)
-- Better logging/debugging tools earlier
-- Simulate network lag during testing (would have caught race conditions)
-- Implement redo with undo (much harder to retrofit)
-- Use TypeScript instead (would have caught state bugs)
-
-**Main learning:**
-
-Global undo forced me to think of the canvas as a replay of operations, not a static image. This is how event sourcing works - something I'd never understood before.
+The undo thing made me realize you can think of a canvas as just replaying all the operations. That's event sourcing - kind of blew my mind.
 
 ---
 
