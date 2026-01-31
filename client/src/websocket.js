@@ -18,8 +18,15 @@ class WebSocketHandler {
   // Connect to WebSocket server
   connect() {
     try {
-      // Connect directly to backend on port 3002
-      this.socket = io('http://localhost:3002', {
+      // Determine backend URL based on environment
+      let socketUrl;
+      if (window.location.hostname === 'localhost') {
+        socketUrl = 'http://localhost:3002'; // Local development
+      } else {
+        socketUrl = window.location.origin; // Production (Vercel)
+      }
+
+      this.socket = io(socketUrl, {
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
